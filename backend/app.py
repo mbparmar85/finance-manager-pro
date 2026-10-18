@@ -20,7 +20,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 login_manager = LoginManager()
-login_manager.login_view = "login"
+
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    return jsonify({"error": "Authentication required."}), 401
 
 EXCHANGE_RATES = {
     "USD": Decimal("1.00"),
@@ -695,7 +699,10 @@ def create_app(config_obj=None):
                 "expenses_by_category": {key: float(value) for key, value in expense_summary.items()},
             }
 
-            return jsonify({"accounts": account_data, "totals": {k: float(v) for k, v in totals.items()}}), 200
+            return jsonify({
+                "accounts": account_data,
+                "totals": {k: v if isinstance(v, dict) else float(v) for k, v in totals.items()},
+            }), 200
         except Exception as e:
             logger.error(f"Dashboard error: {e}")
             return jsonify({"error": "Operation failed."}), 500

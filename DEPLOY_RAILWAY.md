@@ -1,66 +1,88 @@
-# Deploy to Render
+# Deploy to Railway
 
-This guide shows how to deploy the app on Render.
+This guide deploys the API, PostgreSQL, and a small Caddy service that serves
+the built React app and proxies `/api` to the API.
 
-## 1. Prepare the backend
+The frontend calls a relative `/api` path and the login cookie is
+`SameSite=Lax`, so the browser must see the frontend and the API on the same
+domain. The Caddy service in step 3 does that.
 
-Create a new Web Service in Render and connect your GitHub repo.
+## 1. Create the project and database
 
-Set:
-- Build command: `pip install -r backend/requirements.txt`
-- Start command: `gunicorn --bind 0.0.0.0:$PORT app:create_app() --chdir backend`
+**New Project → Deploy from GitHub repo**, pick this repo, then
+**+ New → Database → PostgreSQL** in the same project.
 
-Environment variables:
+## 2. Backend service
+
+- Root directory: `backend` (Python 3.11 is pinned by `backend/.python-version`)
+- Custom start command:
+  ```bash
+  gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 'app:create_app()'
+  ```
+  Keep the quotes around `app:create_app()`; unquoted, the shell rejects the parentheses.
+- Healthcheck path: `/api/health`
+
+Variables:
 ```bash
 FLASK_ENV=production
-SECRET_KEY=your-secret-key
-DATABASE_URL=postgresql://user:password@host:5432/dbname
-CORS_ORIGINS=https://your-frontend-domain.onrender.com
+SECRET_KEY=<python3 -c "import secrets; print(secrets.token_hex(32))">
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+CORS_ORIGINS=https://your-domain.com
 ```
 
-## 2. Add PostgreSQL
+Under Networking, generate a public domain for this service. You need it in step 3.
 
-Create a PostgreSQL database on Render and attach it to the service.
+## 3. Frontend service
 
-Use the connection string from Render in `DATABASE_URL`.
+Do not use `npm run dev` in production: it runs Vite's development server.
+Instead, add these two files to `frontend/` and create a second service from
+this repo with root directory `frontend`. Railway builds it from the Dockerfile.
 
-## 3. Deploy frontend
+`frontend/Dockerfile`:
+```dockerfile
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
 
-If using a separate frontend service:
-- build command: `npm install && npm run build`
-- publish directory: `frontend/dist`
-- set environment or proxy to your backend URL
+FROM caddy:2-alpine
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/dist /srv
+```
 
-## 4. Health checks
+`frontend/Caddyfile`:
+```
+:{$PORT}
 
-Verify:
-- `https://your-backend-url.onrender.com/api/health`
+handle /api/* {
+	reverse_proxy {$BACKEND_URL} {
+		header_up Host {upstream_hostport}
+	}
+}
 
-## 5. Final notes
+handle {
+	root * /srv
+	try_files {path} /index.html
+	file_server
+}
+```
 
-- Use HTTPS
-- Restrict CORS to your frontend domain
-- Rotate environment secrets in production
+Frontend service variable:
+```bash
+BACKEND_URL=https://<backend-public-domain-from-step-2>
+```
 
+Attach your custom domain to the frontend service.
 
+## 4. Verify
 
+```bash
+curl -s https://your-domain.com/api/health
+# {"status": "ok", "timestamp": "..."}
+```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- A 502 means `BACKEND_URL` is wrong or the backend is not healthy yet.
+- Register, reload the page, and confirm you are still logged in.
+- Open a report and export the PDF.

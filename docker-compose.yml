@@ -18,7 +18,8 @@ services:
       - db
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/finance_db
-      FLASK_ENV: production
+      # development: production marks the session cookie Secure, which browsers drop over http://localhost
+      FLASK_ENV: development
       SECRET_KEY: change-me
       CORS_ORIGINS: http://localhost:5173
     ports:

@@ -1,116 +1,66 @@
-# Finance Manager
+# Deploy to Render
 
-A modern personal finance management application with:
-- multi-user authentication
-- account and wallet tracking
-- expense logging and category analysis
-- monthly budget management
-- loan tracking
-- financial reporting and PDF export
-- React + Bootstrap-inspired UI
-- Flask backend with SQLite/PostgreSQL support
-- Gunicorn-ready deployment setup
+This guide deploys the API as a Render Web Service, the React app as a Render
+Static Site, and PostgreSQL as a Render database.
 
-## Tech stack
+The frontend calls a relative `/api` path and the login cookie is
+`SameSite=Lax`, so the browser must see the frontend and the API on the same
+domain. The static site's rewrite rule in step 3 does that.
 
-- Frontend: React + Vite + Bootstrap + Chart.js
-- Backend: Flask + Flask-Login + SQLAlchemy
-- Database: SQLite for local development, PostgreSQL for production
-- Deployment: Gunicorn + Docker optional
+## 1. Create PostgreSQL
 
-## Local setup
+Dashboard → **New → Postgres**, in the same region you will use for the web
+service. Copy its **Internal Database URL**.
 
-### Backend
+If the URL starts with `postgres://`, change it to `postgresql://`
+(SQLAlchemy rejects the short scheme).
+
+## 2. Backend web service
+
+Create a **Web Service** from this repo (Python runtime).
+
+- Root directory: (blank)
+- Build command: `pip install -r backend/requirements.txt`
+- Start command:
+  ```bash
+  gunicorn --chdir backend --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 'app:create_app()'
+  ```
+  Keep the quotes around `app:create_app()`; unquoted, the shell rejects the parentheses.
+- Health check path: `/api/health`
+
+Environment variables:
+```bash
+PYTHON_VERSION=3.11.9
+FLASK_ENV=production
+SECRET_KEY=<python3 -c "import secrets; print(secrets.token_hex(32))">
+DATABASE_URL=<Internal Database URL from step 1>
+CORS_ORIGINS=https://your-domain.com
+```
+
+## 3. Frontend static site
+
+Create a **Static Site** from this repo.
+
+- Root directory: `frontend`
+- Build command: `npm install && npm run build`
+- Publish directory: `dist`
+
+Under **Redirects/Rewrites**, add these rules in this order:
+
+| Source   | Destination                                   | Action  |
+|----------|-----------------------------------------------|---------|
+| `/api/*` | `https://<your-backend>.onrender.com/api/*`   | Rewrite |
+| `/*`     | `/index.html`                                 | Rewrite |
+
+Attach your custom domain to the static site, not to the backend.
+
+## 4. Verify
 
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python app.py
+curl -s https://your-domain.com/api/health
+# {"status": "ok", "timestamp": "..."}
 ```
 
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open the UI at:
-- http://localhost:5173
-
-API will run at:
-- http://localhost:5000
-
-## Production deployment guides
-
-- Render: `DEPLOY_RENDER.md`
-- Railway: `DEPLOY_RAILWAY.md`
-- VPS: `DEPLOY_VPS.md`
-
-## Default user flow
-
-1. Register a new account
-2. Create one or more financial accounts
-3. Add expenses and budgets
-4. Track loans and payments
-5. View monthly reports and export PDF
-
-## Project structure
-
-```text
-finance-manager-pro/
-├── backend/
-│   ├── app.py
-│   ├── config.py
-│   ├── models.py
-│   ├── requirements.txt
-│   ├── .env.example
-│   └── README.md
-├── frontend/
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── index.html
-│   └── src/
-├── DEPLOY_RENDER.md
-├── DEPLOY_RAILWAY.md
-├── DEPLOY_VPS.md
-├── Dockerfile
-├── docker-compose.yml
-├── gunicorn.conf.py
-├── README.md
-├── .gitignore
-└── .env
-```
-
-## Notes
-
-- Local development uses SQLite by default.
-- Production should use PostgreSQL for better performance and reliability.
-- `gunicorn.conf.py` is included for deployment to modern hosting platforms.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- If the health check returns HTML, the `/api/*` rule is below the `/*` rule.
+- Register, reload the page, and confirm you are still logged in.
+- Open a report and export the PDF.
