@@ -695,7 +695,10 @@ def create_app(config_obj=None):
                 "expenses_by_category": {key: float(value) for key, value in expense_summary.items()},
             }
 
-            return jsonify({"accounts": account_data, "totals": {k: float(v) for k, v in totals.items()}}), 200
+            return jsonify({
+                "accounts": account_data,
+                "totals": {k: v if isinstance(v, dict) else float(v) for k, v in totals.items()},
+            }), 200
         except Exception as e:
             logger.error(f"Dashboard error: {e}")
             return jsonify({"error": "Operation failed."}), 500

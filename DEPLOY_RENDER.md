@@ -1,96 +1,46 @@
-# Finance Manager
+# Deploy to Render
 
-A modern personal finance management application with:
-- multi-user authentication
-- account and wallet tracking
-- expense logging and category analysis
-- monthly budget management
-- loan tracking
-- financial reporting and PDF export
-- React + Bootstrap-inspired UI
-- Flask backend with SQLite/PostgreSQL support
-- Gunicorn-ready deployment setup
+This guide shows how to deploy the app on Render.
 
-## Tech stack
+## 1. Prepare the backend
 
-- Frontend: React + Vite + Bootstrap + Chart.js
-- Backend: Flask + Flask-Login + SQLAlchemy
-- Database: SQLite for local development, PostgreSQL for production
-- Deployment: Gunicorn + Docker optional
+Create a new Web Service in Render and connect your GitHub repo.
 
-## Local setup
+Set:
+- Build command: `pip install -r backend/requirements.txt`
+- Start command: `gunicorn --bind 0.0.0.0:$PORT app:create_app() --chdir backend`
 
-### Backend
-
+Environment variables:
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python app.py
+FLASK_ENV=production
+SECRET_KEY=your-secret-key
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+CORS_ORIGINS=https://your-frontend-domain.onrender.com
 ```
 
-### Frontend
+## 2. Add PostgreSQL
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+Create a PostgreSQL database on Render and attach it to the service.
 
-Open the UI at:
-- http://localhost:5173
+Use the connection string from Render in `DATABASE_URL`.
 
-API will run at:
-- http://localhost:5000
+## 3. Deploy frontend
 
-## Production deployment guides
+If using a separate frontend service:
+- build command: `npm install && npm run build`
+- publish directory: `frontend/dist`
+- set environment or proxy to your backend URL
 
-- Render: `DEPLOY_RENDER.md`
-- Railway: `DEPLOY_RAILWAY.md`
-- VPS: `DEPLOY_VPS.md`
+## 4. Health checks
 
-## Default user flow
+Verify:
+- `https://your-backend-url.onrender.com/api/health`
 
-1. Register a new account
-2. Create one or more financial accounts
-3. Add expenses and budgets
-4. Track loans and payments
-5. View monthly reports and export PDF
+## 5. Final notes
 
-## Project structure
-
-```text
-finance-manager-pro/
-├── backend/
-│   ├── app.py
-│   ├── config.py
-│   ├── models.py
-│   ├── requirements.txt
-│   ├── .env.example
-│   └── README.md
-├── frontend/
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── index.html
-│   └── src/
-├── DEPLOY_RENDER.md
-├── DEPLOY_RAILWAY.md
-├── DEPLOY_VPS.md
-├── Dockerfile
-├── docker-compose.yml
-├── gunicorn.conf.py
-├── README.md
-├── .gitignore
-└── .env
-```
-
-## Notes
-
-- Local development uses SQLite by default.
-- Production should use PostgreSQL for better performance and reliability.
-- `gunicorn.conf.py` is included for deployment to modern hosting platforms.
+- Use HTTPS
+- Restrict CORS to your frontend domain
+- Rotate environment secrets in production
 
 
 

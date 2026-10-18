@@ -1,46 +1,55 @@
-# Deploy to Render
+# Deploy to Railway
 
-This guide shows how to deploy the app on Render.
+This guide shows how to deploy the application on Railway.
 
-## 1. Prepare the backend
+## 1. Create a project
 
-Create a new Web Service in Render and connect your GitHub repo.
+Create a project in Railway and add your GitHub repository.
 
-Set:
-- Build command: `pip install -r backend/requirements.txt`
-- Start command: `gunicorn --bind 0.0.0.0:$PORT app:create_app() --chdir backend`
+## 2. Backend service
 
-Environment variables:
+Add a new service for the backend.
+
+Use:
+- root directory: `backend`
+- build command: `pip install -r requirements.txt`
+- start command: `gunicorn --bind 0.0.0.0:$PORT app:create_app()`
+
+Set environment variables:
 ```bash
 FLASK_ENV=production
 SECRET_KEY=your-secret-key
-DATABASE_URL=postgresql://user:password@host:5432/dbname
-CORS_ORIGINS=https://your-frontend-domain.onrender.com
+DATABASE_URL=postgresql://postgres:password@host:port/dbname
+CORS_ORIGINS=https://your-frontend-url.up.railway.app
 ```
 
-## 2. Add PostgreSQL
+## 3. Add PostgreSQL
 
-Create a PostgreSQL database on Render and attach it to the service.
+Railway can provision a PostgreSQL service. Connect it to the backend service and use the generated URL.
 
-Use the connection string from Render in `DATABASE_URL`.
+## 4. Frontend service
 
-## 3. Deploy frontend
+Create a second service for the frontend.
 
-If using a separate frontend service:
+Use:
+- root directory: `frontend`
 - build command: `npm install && npm run build`
-- publish directory: `frontend/dist`
-- set environment or proxy to your backend URL
+- start command: `npm run dev -- --host 0.0.0.0`
 
-## 4. Health checks
+For production static hosting, instead use a static output service or nginx configuration.
 
-Verify:
-- `https://your-backend-url.onrender.com/api/health`
+## 5. Verify deployment
 
-## 5. Final notes
+Test:
+- backend health: `/api/health`
+- login/register flow
+- report generation and PDF export
 
-- Use HTTPS
-- Restrict CORS to your frontend domain
-- Rotate environment secrets in production
+## 6. Production tweaks
+
+- Set secure cookies and HTTPS headers
+- Keep `SECRET_KEY` and `DATABASE_URL` in Railway environment variables
+- Use a real PostgreSQL database instead of SQLite
 
 
 

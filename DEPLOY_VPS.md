@@ -1,55 +1,108 @@
-# Deploy to Railway
+# Deploy to a VPS
 
-This guide shows how to deploy the application on Railway.
+This guide covers deployment on Ubuntu/Debian VPS with Nginx + Gunicorn + PostgreSQL.
 
-## 1. Create a project
+## 1. Install system dependencies
 
-Create a project in Railway and add your GitHub repository.
+```bash
+sudo apt update
+sudo apt install -y python3-pip python3-venv nginx postgresql postgresql-contrib git
+```
 
-## 2. Backend service
+## 2. Create app user
 
-Add a new service for the backend.
+```bash
+sudo useradd -m -s /bin/bash financeapp
+sudo su - financeapp
+```
 
-Use:
-- root directory: `backend`
-- build command: `pip install -r requirements.txt`
-- start command: `gunicorn --bind 0.0.0.0:$PORT app:create_app()`
+## 3. Clone repository
 
-Set environment variables:
+```bash
+git clone https://github.com/your-user/finance-manager-pro.git
+cd finance-manager-pro
+```
+
+## 4. Set up Python environment
+
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Update `.env` for production:
 ```bash
 FLASK_ENV=production
 SECRET_KEY=your-secret-key
-DATABASE_URL=postgresql://postgres:password@host:port/dbname
-CORS_ORIGINS=https://your-frontend-url.up.railway.app
+DATABASE_URL=postgresql://user:password@localhost:5432/finance_db
+CORS_ORIGINS=https://your-domain.com
 ```
 
-## 3. Add PostgreSQL
+## 5. Set up PostgreSQL
 
-Railway can provision a PostgreSQL service. Connect it to the backend service and use the generated URL.
+```bash
+sudo -u postgres psql
+CREATE DATABASE finance_db;
+CREATE USER financeuser WITH PASSWORD 'yourpassword';
+GRANT ALL PRIVILEGES ON DATABASE finance_db TO financeuser;
+```
 
-## 4. Frontend service
+## 6. Start Gunicorn
 
-Create a second service for the frontend.
+```bash
+cd backend
+source venv/bin/activate
+gunicorn --bind 0.0.0.0:8000 app:create_app() --workers 3
+```
 
-Use:
-- root directory: `frontend`
-- build command: `npm install && npm run build`
-- start command: `npm run dev -- --host 0.0.0.0`
+Use a service manager like `systemd` for production reliability.
 
-For production static hosting, instead use a static output service or nginx configuration.
+## 7. Configure Nginx
 
-## 5. Verify deployment
+Example config:
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
 
-Test:
-- backend health: `/api/health`
-- login/register flow
-- report generation and PDF export
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
 
-## 6. Production tweaks
+Enable it:
+```bash
+sudo ln -s /etc/nginx/sites-available/finance /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
 
-- Set secure cookies and HTTPS headers
-- Keep `SECRET_KEY` and `DATABASE_URL` in Railway environment variables
-- Use a real PostgreSQL database instead of SQLite
+## 8. Frontend deployment
+
+Build and serve the React frontend from a static host or a second Nginx site.
+
+For Vite:
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+Then serve the `dist` directory using Nginx or host it separately.
+
+## 9. Final checks
+
+- Verify `https://your-domain.com/api/health`
+- Test login/register flow
+- Test PDF export and reports
+- Run database migrations if needed
 
 
 
