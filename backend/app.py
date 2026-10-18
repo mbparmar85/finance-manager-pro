@@ -20,7 +20,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 login_manager = LoginManager()
-login_manager.login_view = "login"
+
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    return jsonify({"error": "Authentication required."}), 401
 
 EXCHANGE_RATES = {
     "USD": Decimal("1.00"),

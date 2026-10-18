@@ -1,128 +1,134 @@
 # Deploy to a VPS
 
-This guide covers deployment on Ubuntu/Debian VPS with Nginx + Gunicorn + PostgreSQL.
+This guide covers Ubuntu 24.04 / Debian 12 with Nginx, Gunicorn under systemd,
+and PostgreSQL. Nginx serves the built React app and proxies `/api` to
+Gunicorn, so both are on one domain (required by the `SameSite=Lax` login
+cookie). Point DNS for your domain at the server before step 7.
 
-## 1. Install system dependencies
+## 1. Install system packages
 
 ```bash
 sudo apt update
-sudo apt install -y python3-pip python3-venv nginx postgresql postgresql-contrib git
+sudo apt install -y python3-pip python3-venv nginx postgresql git nodejs npm certbot python3-certbot-nginx
 ```
 
-## 2. Create app user
+Vite 5 needs Node 18 or newer (`node -v`).
+
+## 2. Create the app user and clone
 
 ```bash
 sudo useradd -m -s /bin/bash financeapp
-sudo su - financeapp
+sudo -u financeapp git clone https://github.com/your-user/finance-manager-pro.git /home/financeapp/finance-manager-pro
 ```
 
-## 3. Clone repository
+## 3. Create the database
+
+Make the app user the database owner. On PostgreSQL 15+,
+`GRANT ALL PRIVILEGES ON DATABASE` is not enough to create tables.
 
 ```bash
-git clone https://github.com/your-user/finance-manager-pro.git
-cd finance-manager-pro
+sudo -u postgres psql <<'SQL'
+CREATE USER financeuser WITH PASSWORD 'change-this-password';
+CREATE DATABASE finance_db OWNER financeuser;
+SQL
 ```
 
-## 4. Set up Python environment
+## 4. Python environment and settings
 
 ```bash
-cd backend
+sudo -iu financeapp
+cd ~/finance-manager-pro/backend
 python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
+venv/bin/pip install -r requirements.txt
+cp .env.example .env && chmod 600 .env
 ```
 
-Update `.env` for production:
+Edit `backend/.env`:
 ```bash
 FLASK_ENV=production
-SECRET_KEY=your-secret-key
-DATABASE_URL=postgresql://user:password@localhost:5432/finance_db
+SECRET_KEY=<python3 -c "import secrets; print(secrets.token_hex(32))">
+DATABASE_URL=postgresql://financeuser:change-this-password@localhost:5432/finance_db
 CORS_ORIGINS=https://your-domain.com
 ```
 
-## 5. Set up PostgreSQL
+## 5. Run Gunicorn under systemd
 
-```bash
-sudo -u postgres psql
-CREATE DATABASE finance_db;
-CREATE USER financeuser WITH PASSWORD 'yourpassword';
-GRANT ALL PRIVILEGES ON DATABASE finance_db TO financeuser;
+`/etc/systemd/system/finance.service`:
+```ini
+[Unit]
+Description=Finance Manager API
+After=network.target postgresql.service
+
+[Service]
+User=financeapp
+WorkingDirectory=/home/financeapp/finance-manager-pro/backend
+EnvironmentFile=/home/financeapp/finance-manager-pro/backend/.env
+ExecStart=/home/financeapp/finance-manager-pro/backend/venv/bin/gunicorn --config /home/financeapp/finance-manager-pro/gunicorn.conf.py --bind 127.0.0.1:8000 app:create_app()
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-## 6. Start Gunicorn
-
 ```bash
-cd backend
-source venv/bin/activate
-gunicorn --bind 0.0.0.0:8000 app:create_app() --workers 3
+sudo systemctl daemon-reload
+sudo systemctl enable --now finance
+curl -s http://127.0.0.1:8000/api/health
 ```
 
-Use a service manager like `systemd` for production reliability.
+Gunicorn binds to `127.0.0.1` so port 8000 is not exposed publicly.
 
-## 7. Configure Nginx
+## 6. Build the frontend
 
-Example config:
+Nginx cannot read `/home/financeapp` on current Ubuntu, so copy the build to `/var/www`.
+
+```bash
+cd /home/financeapp/finance-manager-pro/frontend
+sudo -u financeapp npm ci
+sudo -u financeapp npm run build
+sudo mkdir -p /var/www/finance
+sudo cp -r dist/. /var/www/finance/
+```
+
+## 7. Configure Nginx and HTTPS
+
+`/etc/nginx/sites-available/finance`:
 ```nginx
 server {
     listen 80;
     server_name your-domain.com;
 
-    location / {
+    root /var/www/finance;
+    index index.html;
+
+    location /api/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+
+    location / {
+        try_files $uri /index.html;
     }
 }
 ```
 
-Enable it:
 ```bash
 sudo ln -s /etc/nginx/sites-available/finance /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d your-domain.com
 ```
 
-## 8. Frontend deployment
+## 8. Verify
 
-Build and serve the React frontend from a static host or a second Nginx site.
-
-For Vite:
 ```bash
-cd frontend
-npm install
-npm run build
+curl -s https://your-domain.com/api/health
+# {"status": "ok", "timestamp": "..."}
 ```
 
-Then serve the `dist` directory using Nginx or host it separately.
-
-## 9. Final checks
-
-- Verify `https://your-domain.com/api/health`
-- Test login/register flow
-- Test PDF export and reports
-- Run database migrations if needed
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- Register, reload the page, and confirm you are still logged in.
+- Open a report and export the PDF.
+- Errors: `journalctl -u finance -n 50`.

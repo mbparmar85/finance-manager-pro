@@ -1,66 +1,66 @@
 # Deploy to Render
 
-This guide shows how to deploy the app on Render.
+This guide deploys the API as a Render Web Service, the React app as a Render
+Static Site, and PostgreSQL as a Render database.
 
-## 1. Prepare the backend
+The frontend calls a relative `/api` path and the login cookie is
+`SameSite=Lax`, so the browser must see the frontend and the API on the same
+domain. The static site's rewrite rule in step 3 does that.
 
-Create a new Web Service in Render and connect your GitHub repo.
+## 1. Create PostgreSQL
 
-Set:
+Dashboard → **New → Postgres**, in the same region you will use for the web
+service. Copy its **Internal Database URL**.
+
+If the URL starts with `postgres://`, change it to `postgresql://`
+(SQLAlchemy rejects the short scheme).
+
+## 2. Backend web service
+
+Create a **Web Service** from this repo (Python runtime).
+
+- Root directory: (blank)
 - Build command: `pip install -r backend/requirements.txt`
-- Start command: `gunicorn --bind 0.0.0.0:$PORT app:create_app() --chdir backend`
+- Start command:
+  ```bash
+  gunicorn --chdir backend --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 'app:create_app()'
+  ```
+  Keep the quotes around `app:create_app()`; unquoted, the shell rejects the parentheses.
+- Health check path: `/api/health`
 
 Environment variables:
 ```bash
+PYTHON_VERSION=3.11.9
 FLASK_ENV=production
-SECRET_KEY=your-secret-key
-DATABASE_URL=postgresql://user:password@host:5432/dbname
-CORS_ORIGINS=https://your-frontend-domain.onrender.com
+SECRET_KEY=<python3 -c "import secrets; print(secrets.token_hex(32))">
+DATABASE_URL=<Internal Database URL from step 1>
+CORS_ORIGINS=https://your-domain.com
 ```
 
-## 2. Add PostgreSQL
+## 3. Frontend static site
 
-Create a PostgreSQL database on Render and attach it to the service.
+Create a **Static Site** from this repo.
 
-Use the connection string from Render in `DATABASE_URL`.
+- Root directory: `frontend`
+- Build command: `npm install && npm run build`
+- Publish directory: `dist`
 
-## 3. Deploy frontend
+Under **Redirects/Rewrites**, add these rules in this order:
 
-If using a separate frontend service:
-- build command: `npm install && npm run build`
-- publish directory: `frontend/dist`
-- set environment or proxy to your backend URL
+| Source   | Destination                                   | Action  |
+|----------|-----------------------------------------------|---------|
+| `/api/*` | `https://<your-backend>.onrender.com/api/*`   | Rewrite |
+| `/*`     | `/index.html`                                 | Rewrite |
 
-## 4. Health checks
+Attach your custom domain to the static site, not to the backend.
 
-Verify:
-- `https://your-backend-url.onrender.com/api/health`
+## 4. Verify
 
-## 5. Final notes
+```bash
+curl -s https://your-domain.com/api/health
+# {"status": "ok", "timestamp": "..."}
+```
 
-- Use HTTPS
-- Restrict CORS to your frontend domain
-- Rotate environment secrets in production
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- If the health check returns HTML, the `/api/*` rule is below the `/*` rule.
+- Register, reload the page, and confirm you are still logged in.
+- Open a report and export the PDF.
